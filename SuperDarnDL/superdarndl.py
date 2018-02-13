@@ -3,10 +3,11 @@ from davitpy.pydarn.sdio.sdDataTypes import sdDataPtr,gridData
 from davitpy.pydarn.sdio.sdDataRead import * #May want to check for collisions from sdDataRead
 #import davitpy.gme.ind as gmeind
 from geospacepy import omnireader
-import apex-python
+import apexpy
 import igrfpy
 import datetime
 import aacgmv2
+import numpy as np
 
 def _sdGridLoad(sTime,eTime,deltaT,hemi,fileType,src,fileName,custType,noCache,estd=False,TWidth=None):
 	#Internal function to get SuperDARN grid data for desired times, and adjust time resolution if necessary
@@ -105,7 +106,7 @@ def _sdGridLoad(sTime,eTime,deltaT,hemi,fileType,src,fileName,custType,noCache,e
 
 	return sdList
 
-def readDay(self,dt,
+def readDay(hemiSN,dt,
 			deltaT=2,fileType='grdex',src=None,fileName=None,
 			custType='grdex',noCache=False):
 	"""Read one day and hemisphere of SuperDARN data
@@ -114,6 +115,7 @@ def readDay(self,dt,
 	
 	Parameters
 	----------
+        hemiSN: N or S
 	dt : TYPE
 	    Description
 	deltaT : int, optional
@@ -134,18 +136,18 @@ def readDay(self,dt,
 	TYPE
 	    Description
 	"""
-	import davitpy.models.aacgm as aacgm
+	#import davitpy.models.aacgm as aacgm
 
 	#def _sdGridLoad(sTime,eTime,deltaT,hemi,fileType,src,fileName,custType,noCache,estd=False,TWidth=None):
 	
 	#SAM uses different hemisphere naming convention
-	if self.hemi is 'N':
+	if hemiSN is 'N':
 		hemi = 'north' 
-	elif self.hemi is 'S':
+	elif hemiSN is 'S':
 		hemi = 'south'
 
 	#Load in data in 2 minute chunks
-	sdList = just_sam.sam._sdGridLoad(dt,
+	sdList = _sdGridLoad(dt,
 									dt+datetime.timedelta(days=1),
 									deltaT,
 									hemi,
@@ -176,12 +178,14 @@ def readDay(self,dt,
 		mlon = np.asarray(sdI.vector.mlon)
 		y,M,d = sdI.sTime.year,sdI.sTime.month,sdI.sTime.day
 		h,m,s = sdI.sTime.hour,sdI.sTime.minute,sdI.sTime.second
-		mltDef = aacgm.mltFromYmdhms(y,M,d,h,m,s,0.0) * 15. 
+		# mltDef = aacgm.mltFromYmdhms(y,M,d,h,m,s,0.0) * 15. 
 		# mltDef is the rotation that needs to be applied, 
 		# and lon is the AACGM longitude.
 		# use modulo so new longitude is between 0 & 360
-		mlt_lon = np.mod((mlon + mltDef), 360.)
-		mlons.append(mlon) #Actual mlon
+		# mlt_lon = np.mod((mlon + mltDef), 360.)
+		
+                mlt_lon=aacgmv2.convert_mlt(mlon, sdI.sTime, False) ## sishen added 
+                mlons.append(mlon) #Actual mlon
 		mltlons.append(mlt_lon) #MLT in degrees
 		#Convert to electric field
 		vel = np.asarray(sdI.vector.velmedian)
@@ -194,7 +198,7 @@ def readDay(self,dt,
 		
 		#Could use either Apex-Python or AACGMv2 package
 		#for magnetic to geocentric conversion
-		gdlat,gdlon = aacgmv2.convert(mlat,mlon,date=sdI.sTime,a2g=True)
+		gdlat,gdlon = aacgmv2.convert(mlat,mlon,approx_alt,date=sdI.sTime,a2g=True)
 		#gdlat,gdlon = ac.apex2geo(mlat,mlon,approx_alt)
 		Be,Bn,Bu = igrfpy.getmainfield(sdI.sTime,
 										gdlat,gdlon,
@@ -216,3 +220,33 @@ def readDay(self,dt,
 
 	return (startdts,enddts,mlats,mlons,mltlons,
 		vels,verrs,eloss,eerrs,azms,rids,bigrfs)
+
+
+
+## just test
+if __name__ == "__main__":
+        dt=datetime.datetime(2017,2,1,0,0,0)
+        (startdts, enddts, mlats, mlons, mltlons, vels, verrs, eloss, eerrs, azms, rids, bigrfs) = readDay("N", dt)
+        print(len(startdts))
+        print("0:"+str(startdts[0])+" -> "+str(enddts[0]))
+        mid=len(startdts)//2
+        print("mid:"+str(startdts[mid])+" -> "+str(enddts[mid]))
+        print("end:"+str(startdts[-1])+" -> "+str(enddts[-1]))
+        np.set_printoptions(threshold=50)
+        len_each_mlat=np.zeros(len(mlats))
+        len_each_vel=np.zeros(len(vels))
+        len_each_elos=np.zeros(len(eloss))
+        for i in range(len(mlats)):
+            len_each_mlat[i]=len(mlats[i])
+        for i in range(len(vels)):
+            len_each_vel[i]=len(vels[i])
+        for i in range(len(eloss)):
+            len_each_elos[i]=len(eloss[i])
+        print("mlat len:")
+        print(len_each_mlat)
+        print("vel len:")
+        print(len_each_vel)
+        print("elos len:")
+        print(len_each_elos)
+
+
